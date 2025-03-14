@@ -1,17 +1,16 @@
-name: Build Android Protobuf
+name: Build and Release Android Protobuf
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:  # 允许手动触发
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 需要写入权限以创建 Release
 
     steps:
       # 检出代码
@@ -113,9 +112,25 @@ jobs:
 
           echo "Protobuf static libraries have been built and copied to libs directory"
 
-      # 上传构建产物
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: protobuf-libs
-          path: libs/
+      # 打包构建产物
+      - name: Package Artifacts
+        run: |
+          tar -czvf protobuf-libs.tar.gz libs/
+
+      # 创建 Release 并上传产物
+      - name: Create Release and Upload Artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 默认提供的 token
+        run: |
+          # 生成版本号（可以用 commit SHA 或日期）
+          TAG_NAME="v${{ env.PROTOBUF_VERSION }}-$(date +%Y%m%d-%H%M%S)"
+          
+          # 创建 Release
+          gh release create "$TAG_NAME" \
+            --title "Protobuf ${{ env.PROTOBUF_VERSION }} for Android" \
+            --notes "Built Protobuf static libraries for Android ABIs: ${{ env.ANDROID_ABI }}" \
+            --draft=false \
+            --prerelease=false
+
+          # 上传打包文件到 Release
+          gh release upload "$TAG_NAME" protobuf-libs.tar.gz
