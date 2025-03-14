@@ -1,0 +1,121 @@
+name: Build Android Protobuf
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 设置 Java 和 Android SDK
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          sdk-version: '34'  # 可根据需要调整 Android SDK 版本
+
+      # 安装 NDK
+      - name: Install Android NDK
+        run: |
+          sdkmanager "ndk;27.0.12077973"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+
+      # 安装 CMake
+      - name: Install CMake
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+
+      # 设置构建环境和变量
+      - name: Setup Build Environment
+        run: |
+          echo "PROTOBUF_VERSION=29.3" >> $GITHUB_ENV
+          echo "ANDROID_ABI=arm64-v8a" >> $GITHUB_ENV  # 可扩展为多个 ABI
+          echo "ANDROID_PLATFORM=24" >> $GITHUB_ENV
+          echo "INSTALL_BASE=$(pwd)/libs" >> $GITHUB_ENV
+
+      # 下载和构建 Protobuf
+      - name: Build Protobuf
+        run: |
+          # 下载 Protobuf 源码
+          if [ ! -d "protobuf" ]; then
+            git clone --depth 1 --branch v${{ env.PROTOBUF_VERSION }} --recurse-submodules https://github.com/protocolbuffers/protobuf
+          fi
+
+          # 为每个 ABI 编译
+          for abi in ${{ env.ANDROID_ABI }}; do
+            echo "Building for $abi"
+            BUILD_DIR="protobuf_build_${abi}"
+            INSTALL_DIR="${{ env.INSTALL_BASE }}/${abi}"
+
+            # 设置目标架构
+            case $abi in
+              "arm64-v8a")
+                TARGET="aarch64-linux-android"
+                ;;
+              "armeabi-v7a")
+                TARGET="armv7a-linux-androideabi"
+                ;;
+              "x86")
+                TARGET="i686-linux-android"
+                ;;
+              "x86_64")
+                TARGET="x86_64-linux-android"
+                ;;
+            esac
+
+            # 创建构建目录
+            mkdir -p ${BUILD_DIR}
+            cd ${BUILD_DIR}
+
+            # 配置 CMake
+            cmake ../protobuf \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR} \
+              -Dprotobuf_BUILD_TESTS=OFF \
+              -Dprotobuf_BUILD_SHARED_LIBS=OFF \
+              -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+              -DCMAKE_SYSTEM_NAME=Android \
+              -DCMAKE_SYSTEM_VERSION=${{ env.ANDROID_PLATFORM }} \
+              -DCMAKE_ANDROID_ARCH_ABI=${abi} \
+              -DCMAKE_ANDROID_NDK=${{ env.ANDROID_NDK_HOME }} \
+              -DCMAKE_ANDROID_STL_TYPE=c++_static \
+              -DCMAKE_TOOLCHAIN_FILE=${{ env.ANDROID_NDK_HOME }}/build/cmake/android.toolchain.cmake \
+              -DANDROID_ABI=${abi} \
+              -DANDROID_PLATFORM=android-${{ env.ANDROID_PLATFORM }}
+
+            # 编译和安装
+            make -j$(nproc)
+            make install
+
+            cd ..
+            rm -rf ${BUILD_DIR}
+          done
+
+          # 清理 Protobuf 源码目录
+          rm -rf protobuf
+
+          echo "Protobuf static libraries have been built and copied to libs directory"
+
+      # 上传构建产物
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: protobuf-libs
+          path: libs/
