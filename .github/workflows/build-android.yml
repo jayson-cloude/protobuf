@@ -3,7 +3,7 @@ name: Build and Release Android Protobuf
 on:
   push:
     branches:
-      - main
+      - 3.20.3_ndk21_maint
   workflow_dispatch:  # 允许手动触发
 
 jobs:
