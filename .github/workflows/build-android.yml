@@ -49,7 +49,7 @@ jobs:
           echo "ANDROID_PLATFORM=24" >> $GITHUB_ENV
           echo "INSTALL_BASE=$(pwd)/libs" >> $GITHUB_ENV
 
-      # 下载和构建 Protobuf
+      # 下载和构建 Protobuf yt
       - name: Build Protobuf
         run: |
           # 下载 Protobuf 源码
